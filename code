@@ -1,0 +1,116 @@
+#define BLYNK_TEMPLATE_ID "TMPL3Iy8Jsch_"
+#define BLYNK_TEMPLATE_NAME "Smart Pet Feeder"
+#define BLYNK_PRINT Serial
+
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <Servo.h>
+
+#define trig1 D2  // Trig pin for the first ultrasonic sensor
+#define echo1 D1  // Echo pin for the first ultrasonic sensor
+#define trig2 D3  // Trig pin for the second ultrasonic sensor
+#define echo2 D4  // Echo pin for the second ultrasonic sensor
+
+char auth[] = "";  // Blynk auth token
+char ssid[] = "";                  // WiFi SSID
+char pass[] = "";                          // WiFi password
+
+long duration1, duration2;
+int distance1, distance2;
+
+Servo servo1;  // Servo motor object
+BlynkTimer timer;
+WidgetLCD lcd1(V1);
+WidgetLCD lcd2(V3);
+
+// BLYNK_WRITE function to control the servo motor
+BLYNK_WRITE(V2) {
+    int s0 = param.asInt(); // Read angle value from the Blynk app
+    servo1.write(s0);       // Move servo to the specified angle
+
+    Serial.print("Servo angle set to: ");
+    Serial.println(s0);
+}
+
+void sendSensorData() {
+    // First Ultrasonic Sensor
+    digitalWrite(trig1, LOW);  
+    delayMicroseconds(2);  
+    digitalWrite(trig1, HIGH);  
+    delayMicroseconds(10);  
+    digitalWrite(trig1, LOW);  
+
+    duration1 = pulseIn(echo1, HIGH, 30000);  
+    distance1 = duration1 * 0.034 / 2;  // Calculate distance in cm
+
+    // Second Ultrasonic Sensor
+    digitalWrite(trig2, LOW);  
+    delayMicroseconds(2);  
+    digitalWrite(trig2, HIGH);  
+    delayMicroseconds(10);  
+    digitalWrite(trig2, LOW);  
+
+    duration2 = pulseIn(echo2, HIGH, 30000);  
+    distance2 = duration2 * 0.034 / 2;  // Calculate distance in cm
+
+    // Debugging - Output to serial monitor
+    Serial.print("Distance 1: ");  
+    Serial.println(distance1);
+    Serial.print("Distance 2: ");
+    Serial.println(distance2);
+
+    // Send the distance data to the Blynk app
+    Blynk.virtualWrite(V0, distance1);  // Send distance1 to virtual pin V0
+    Blynk.virtualWrite(V4, distance2);  // Send distance2 to virtual pin V4
+
+    static int lastDistance1 = -1, lastDistance2 = -1;  // Store previous values
+
+    if (distance1 != lastDistance1) {
+        lcd1.clear();
+        lcd1.print(0, 0, "Food Status");
+        lcd1.print(0, 1, String("Food Level: ") + distance1 + " cm");
+        lastDistance1 = distance1;
+    }
+
+    if (distance2 != lastDistance2) {
+        lcd2.clear();
+        lcd2.print(0, 0, "Bowl Status");
+        lcd2.print(0, 1, String("Food in Bowl: ") + distance2 + " cm");
+        lastDistance2 = distance2;
+    }
+}
+
+void sendNotificationIfNeeded() {
+    if (distance1 > 15) {   
+        Blynk.logEvent("food_dispenser_low");
+    }
+    if (distance2 > 19) {  
+        Blynk.logEvent("food_bowl_empty");
+    }
+    if (distance2 < 15) {
+        Blynk.logEvent("food_bowl_full");
+    }
+}
+
+void setup() {
+    Serial.begin(9600);
+
+    pinMode(trig1, OUTPUT);
+    pinMode(echo1, INPUT);
+    pinMode(trig2, OUTPUT);
+    pinMode(echo2, INPUT);
+
+    servo1.attach(D7);  // Connect servo to pin D7
+    servo1.write(90);   // Default servo position
+
+    Blynk.begin(auth, ssid, pass);
+    Serial.println("Connected to Blynk and WiFi");
+
+    timer.setInterval(1000L, sendSensorData);
+}
+
+void loop() {
+    Blynk.run();  // Keep Blynk connection alive
+    timer.run();  // Handle timer tasks
+    sendNotificationIfNeeded();
+}
